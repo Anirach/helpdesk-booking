@@ -13,6 +13,10 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useBulkSelection } from "@/hooks/useBulkSelection";
 import { BulkActionsBar } from "@/components/admin/BulkActionsBar";
 import { Checkbox } from "@/components/ui/checkbox";
+import { CalendarView } from "@/components/calendar/CalendarView";
+import { StaffWorkloadStats } from "@/components/admin/StaffWorkloadStats";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { startOfMonth, endOfMonth, addMonths, startOfWeek, endOfWeek, addWeeks } from "date-fns";
 
 interface User {
   id: string;
@@ -26,9 +30,19 @@ export default function AdminPage() {
   const [user, setUser] = useState<User | null>(null);
   const [stats, setStats] = useState({ total: 0, pending: 0, completed: 0, staff: 0 });
   const [appointments, setAppointments] = useState<any[]>([]);
+  const [calendarAppointments, setCalendarAppointments] = useState<any[]>([]);
+  const [unavailability, setUnavailability] = useState<any[]>([]);
+  const [calendarLoading, setCalendarLoading] = useState(false);
   const [staff, setStaff] = useState<User[]>([]);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
+
+  // Staff overview state
+  const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
+  const [staffMetrics, setStaffMetrics] = useState<any>(null);
+  const [staffMetricsLoading, setStaffMetricsLoading] = useState(false);
+  const [staffCalendarAppointments, setStaffCalendarAppointments] = useState<any[]>([]);
+  const [staffUnavailability, setStaffUnavailability] = useState<any[]>([]);
 
   // Bulk selection
   const bulkSelection = useBulkSelection(appointments);
@@ -40,6 +54,7 @@ export default function AdminPage() {
     onAppointmentAssigned: () => {
       // Refresh data when assignments change
       fetchData();
+      fetchCalendarData();
     },
     enabled: !!user,
   });
@@ -75,6 +90,87 @@ export default function AdminPage() {
       completed: apptData.filter((a: any) => a.status === "COMPLETED").length,
       staff: staffData.length,
     });
+  }
+
+  async function fetchCalendarData() {
+    setCalendarLoading(true);
+    try {
+      // Fetch appointments for current month ± 1 month
+      const now = new Date();
+      const startDate = startOfMonth(addMonths(now, -1));
+      const endDate = endOfMonth(addMonths(now, 1));
+
+      const params = new URLSearchParams({
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        view: "admin",
+      });
+
+      const res = await fetch(`/api/appointments/calendar?${params}`);
+      const data = await res.json();
+
+      setCalendarAppointments(data.appointments || []);
+      setUnavailability(data.unavailability || []);
+    } catch (e) {
+      console.error("Failed to fetch calendar data:", e);
+    } finally {
+      setCalendarLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (user) {
+      fetchCalendarData();
+    }
+  }, [user]);
+
+  async function fetchStaffMetrics(staffId: string) {
+    setStaffMetricsLoading(true);
+    try {
+      const now = new Date();
+      const startDate = startOfWeek(now, { weekStartsOn: 1 });
+      const endDate = endOfWeek(now, { weekStartsOn: 1 });
+      endDate.setDate(endDate.getDate() + 7); // Add one more week
+
+      const params = new URLSearchParams({
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+      });
+
+      const res = await fetch(`/api/staff/${staffId}/metrics?${params}`);
+      const data = await res.json();
+      setStaffMetrics(data);
+
+      // Also fetch calendar data for this staff
+      await fetchStaffCalendarData(staffId);
+    } catch (e) {
+      console.error("Failed to fetch staff metrics:", e);
+    } finally {
+      setStaffMetricsLoading(false);
+    }
+  }
+
+  async function fetchStaffCalendarData(staffId: string) {
+    try {
+      const now = new Date();
+      const startDate = startOfMonth(addMonths(now, -1));
+      const endDate = endOfMonth(addMonths(now, 1));
+
+      const params = new URLSearchParams({
+        staffId,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        view: "admin",
+      });
+
+      const res = await fetch(`/api/appointments/calendar?${params}`);
+      const data = await res.json();
+
+      setStaffCalendarAppointments(data.appointments || []);
+      setStaffUnavailability(data.unavailability || []);
+    } catch (e) {
+      console.error("Failed to fetch staff calendar:", e);
+    }
   }
 
   function handleLogout() {
@@ -144,11 +240,137 @@ export default function AdminPage() {
           </Card>
         </div>
 
-        <Tabs defaultValue="appointments" className="space-y-4">
+        <Tabs defaultValue="calendar" className="space-y-4">
           <TabsList>
-            <TabsTrigger value="appointments">นัดหมาย</TabsTrigger>
-            <TabsTrigger value="staff">เจ้าหน้าที่</TabsTrigger>
+            <TabsTrigger value="calendar">📅 ปฏิทิน</TabsTrigger>
+            <TabsTrigger value="staff-overview">👤 ภาพรวมเจ้าหน้าที่</TabsTrigger>
+            <TabsTrigger value="appointments">นัดหมาย ({stats.total})</TabsTrigger>
+            <TabsTrigger value="staff">เจ้าหน้าที่ ({stats.staff})</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="calendar">
+            <Card>
+              <CardHeader>
+                <CardTitle>ปฏิทินนัดหมายทั้งหมด</CardTitle>
+                <CardDescription>All Appointments Calendar - View all staff schedules</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {calendarLoading ? (
+                  <div className="flex items-center justify-center h-[600px]">
+                    <p className="text-gray-500">กำลังโหลด...</p>
+                  </div>
+                ) : (
+                  <CalendarView
+                    appointments={calendarAppointments}
+                    unavailability={unavailability}
+                    view="admin"
+                    onAppointmentClick={(apt) => {
+                      // Open assignment dialog for admin
+                      setSelectedAppointment(apt);
+                      setAssignDialogOpen(true);
+                    }}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="staff-overview">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>ภาพรวมเจ้าหน้าที่</CardTitle>
+                    <CardDescription>Staff Overview - Individual workload and calendar</CardDescription>
+                  </div>
+                  <Select
+                    value={selectedStaffId || ""}
+                    onValueChange={(value) => {
+                      setSelectedStaffId(value);
+                      if (value) fetchStaffMetrics(value);
+                    }}
+                  >
+                    <SelectTrigger className="w-[300px]">
+                      <SelectValue placeholder="เลือกเจ้าหน้าที่..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {staff.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name} ({s.email})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {!selectedStaffId ? (
+                  <div className="flex items-center justify-center h-[400px]">
+                    <p className="text-gray-500">กรุณาเลือกเจ้าหน้าที่เพื่อดูข้อมูล</p>
+                  </div>
+                ) : staffMetricsLoading ? (
+                  <div className="flex items-center justify-center h-[400px]">
+                    <p className="text-gray-500">กำลังโหลดข้อมูล...</p>
+                  </div>
+                ) : staffMetrics ? (
+                  <>
+                    {/* Workload Stats Cards */}
+                    <StaffWorkloadStats metrics={staffMetrics} loading={staffMetricsLoading} />
+
+                    {/* Staff Calendar */}
+                    <div className="mt-6">
+                      <h3 className="text-lg font-semibold mb-4">
+                        ปฏิทินของ {staffMetrics.staff.name}
+                      </h3>
+                      <CalendarView
+                        appointments={staffCalendarAppointments}
+                        unavailability={staffUnavailability}
+                        staffId={selectedStaffId}
+                        view="admin"
+                        onAppointmentClick={(apt) => {
+                          setSelectedAppointment(apt);
+                          setAssignDialogOpen(true);
+                        }}
+                      />
+                    </div>
+
+                    {/* Upcoming Appointments Table */}
+                    {staffMetrics.upcomingAppointments?.length > 0 && (
+                      <div className="mt-6">
+                        <h3 className="text-lg font-semibold mb-4">นัดหมายที่กำลังจะถึง</h3>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>วันที่</TableHead>
+                              <TableHead>เวลา</TableHead>
+                              <TableHead>ผู้จอง</TableHead>
+                              <TableHead>บริการ</TableHead>
+                              <TableHead>สถานะ</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {staffMetrics.upcomingAppointments.slice(0, 5).map((apt: any) => (
+                              <TableRow key={apt.id}>
+                                <TableCell>
+                                  {new Date(apt.date).toLocaleDateString("th-TH")}
+                                </TableCell>
+                                <TableCell className="font-mono">{apt.startTime}</TableCell>
+                                <TableCell>{apt.userName}</TableCell>
+                                <TableCell>{apt.service?.nameTh}</TableCell>
+                                <TableCell>
+                                  <Badge>{apt.status}</Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </>
+                ) : null}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="appointments">
             <Card>
@@ -275,7 +497,10 @@ export default function AdminPage() {
         onOpenChange={setAssignDialogOpen}
         appointment={selectedAppointment}
         staff={staff}
-        onAssignmentComplete={fetchData}
+        onAssignmentComplete={() => {
+          fetchData();
+          fetchCalendarData();
+        }}
         userId={user?.id || ""}
         userName={user?.name || ""}
       />

@@ -10,12 +10,23 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PickupConfirmDialog } from "@/components/staff/PickupConfirmDialog";
 import { useNotifications } from "@/hooks/useNotifications";
+import { CalendarView } from "@/components/calendar/CalendarView";
+import { StaffAppointmentDialog } from "@/components/calendar/StaffAppointmentDialog";
+import { UnavailabilityDialog } from "@/components/calendar/UnavailabilityDialog";
+import { startOfMonth, endOfMonth, addMonths, format } from "date-fns";
 
 interface User {
   id: string;
   name: string;
   email: string;
   role: string;
+}
+
+interface Service {
+  id: string;
+  name: string;
+  nameTh: string;
+  duration: number;
 }
 
 interface Appointment {
@@ -29,16 +40,34 @@ interface Appointment {
   status: string;
   staffId?: string | null;
   staff?: { id: string; name: string; email: string } | null;
-  service: { nameTh: string };
+  service: Service;
+}
+
+interface StaffAvailability {
+  id: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  reason: string;
+  recurring: boolean;
+  staffId: string;
+  staff: { id: string; name: string; email: string };
 }
 
 export default function StaffPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [calendarAppointments, setCalendarAppointments] = useState<Appointment[]>([]);
+  const [unavailability, setUnavailability] = useState<StaffAvailability[]>([]);
   const [loading, setLoading] = useState(true);
+  const [calendarLoading, setCalendarLoading] = useState(false);
   const [pickupDialogOpen, setPickupDialogOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [appointmentDialogOpen, setAppointmentDialogOpen] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<{ date: Date; time: string } | null>(null);
+  const [unavailabilityDialogOpen, setUnavailabilityDialogOpen] = useState(false);
+  const [selectedUnavailability, setSelectedUnavailability] = useState<StaffAvailability | null>(null);
 
   // Real-time notifications
   useNotifications({
@@ -47,6 +76,7 @@ export default function StaffPage() {
     onAppointmentAssigned: () => {
       // Refresh appointments when someone is assigned
       fetchTodayAppointments();
+      fetchCalendarData();
     },
     enabled: !!user,
   });
@@ -62,6 +92,12 @@ export default function StaffPage() {
     fetchTodayAppointments();
   }, [router]);
 
+  useEffect(() => {
+    if (user) {
+      fetchCalendarData();
+    }
+  }, [user]);
+
   async function fetchTodayAppointments() {
     try {
       const res = await fetch("/api/appointments");
@@ -75,6 +111,35 @@ export default function StaffPage() {
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchCalendarData() {
+    if (!user) return;
+
+    setCalendarLoading(true);
+    try {
+      // Fetch appointments for current month ± 1 month
+      const now = new Date();
+      const startDate = startOfMonth(addMonths(now, -1));
+      const endDate = endOfMonth(addMonths(now, 1));
+
+      const params = new URLSearchParams({
+        staffId: user.id,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        view: "staff",
+      });
+
+      const res = await fetch(`/api/appointments/calendar?${params}`);
+      const data = await res.json();
+
+      setCalendarAppointments(data.appointments || []);
+      setUnavailability(data.unavailability || []);
+    } catch (e) {
+      console.error("Failed to fetch calendar data:", e);
+    } finally {
+      setCalendarLoading(false);
     }
   }
 
@@ -162,11 +227,57 @@ export default function StaffPage() {
           </Card>
         </div>
 
-        <Tabs defaultValue="my" className="space-y-4">
+        <Tabs defaultValue="calendar" className="space-y-4">
           <TabsList>
+            <TabsTrigger value="calendar">📅 ปฏิทิน</TabsTrigger>
             <TabsTrigger value="my">งานของฉัน ({myAppointments.length})</TabsTrigger>
             <TabsTrigger value="available">งานว่าง ({availableAppointments.length})</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="calendar">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>ปฏิทินนัดหมาย</CardTitle>
+                    <CardDescription>Appointment Calendar - View your schedule</CardDescription>
+                  </div>
+                  <Button onClick={() => setUnavailabilityDialogOpen(true)}>
+                    🚫 สร้างช่วงเวลาไม่ว่าง
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {calendarLoading ? (
+                  <div className="flex items-center justify-center h-[600px]">
+                    <p className="text-gray-500">กำลังโหลด...</p>
+                  </div>
+                ) : (
+                  <CalendarView
+                    appointments={calendarAppointments}
+                    unavailability={unavailability}
+                    staffId={user?.id}
+                    view="staff"
+                    onAppointmentClick={(apt) => {
+                      // TODO: Show appointment details modal
+                      console.log("Appointment clicked:", apt);
+                    }}
+                    onSlotSelect={(slotInfo) => {
+                      // Open create appointment dialog with prefilled date/time
+                      const selectedTime = format(slotInfo.start, "HH:mm");
+                      setSelectedSlot({ date: slotInfo.start, time: selectedTime });
+                      setAppointmentDialogOpen(true);
+                    }}
+                    onUnavailabilityClick={(unav) => {
+                      // Open edit unavailability dialog
+                      setSelectedUnavailability(unav);
+                      setUnavailabilityDialogOpen(true);
+                    }}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="my">
             <Card>
@@ -281,6 +392,33 @@ export default function StaffPage() {
         userId={user?.id || ""}
         userName={user?.name || ""}
         onPickupComplete={fetchTodayAppointments}
+      />
+
+      <StaffAppointmentDialog
+        open={appointmentDialogOpen}
+        onClose={() => setAppointmentDialogOpen(false)}
+        prefilledDate={selectedSlot?.date}
+        prefilledTime={selectedSlot?.time}
+        staffId={user?.id || ""}
+        staffName={user?.name || ""}
+        onSuccess={() => {
+          fetchTodayAppointments();
+          fetchCalendarData();
+        }}
+      />
+
+      <UnavailabilityDialog
+        open={unavailabilityDialogOpen}
+        onClose={() => {
+          setUnavailabilityDialogOpen(false);
+          setSelectedUnavailability(null);
+        }}
+        staffId={user?.id || ""}
+        staffName={user?.name || ""}
+        existingRecord={selectedUnavailability || undefined}
+        onSuccess={() => {
+          fetchCalendarData();
+        }}
       />
     </div>
   );
