@@ -1,0 +1,72 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String              @id @default(cuid())
+  name         String
+  email        String              @unique
+  password     String
+  role         String              @default("STAFF") // USER, STAFF, ADMIN
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  appointments Appointment[]
+  availability StaffAvailability[]
+  services     Service[]           @relation("StaffServices")
+}
+
+model Service {
+  id           String        @id @default(cuid())
+  name         String
+  nameTh       String
+  description  String?
+  duration     Int           @default(30)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  appointments Appointment[]
+  staff        User[]        @relation("StaffServices")
+}
+
+model Appointment {
+  id          String   @id @default(cuid())
+  date        DateTime
+  startTime   String
+  endTime     String
+  userName    String
+  userEmail   String?
+  userPhone   String
+  description String
+  status      String   @default("PENDING") // PENDING, CONFIRMED, COMPLETED, CANCELLED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  service     Service  @relation(fields: [serviceId], references: [id])
+  serviceId   String
+  staff       User?    @relation(fields: [staffId], references: [id])
+  staffId     String?
+}
+
+model StaffAvailability {
+  id        String   @id @default(cuid())
+  date      DateTime
+  startTime String
+  endTime   String
+  reason    String
+  recurring Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  staff     User     @relation(fields: [staffId], references: [id])
+  staffId   String
+}
+
+model Settings {
+  id           String @id @default(cuid())
+  workingStart String @default("08:30")
+  workingEnd   String @default("16:30")
+  slotDuration Int    @default(30)
+  holidays     String @default("[]")
+}
