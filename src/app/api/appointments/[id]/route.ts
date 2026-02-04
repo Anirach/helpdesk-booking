@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { createAuditLog, createAppointmentHistory, getStaffName } from "@/lib/audit";
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { staffId } = await request.json();
+    const body = await request.json();
+    const { staffId, performedBy, performedByName } = body;
     const { id: appointmentId } = await params;
 
     if (!appointmentId) {
@@ -30,9 +32,12 @@ export async function PATCH(
       }
     }
 
-    // Check if appointment exists
+    // Get current appointment to capture old values
     const appointment = await prisma.appointment.findUnique({
       where: { id: appointmentId },
+      include: {
+        staff: true,
+      },
     });
 
     if (!appointment) {
@@ -41,6 +46,10 @@ export async function PATCH(
         { status: 404 }
       );
     }
+
+    // Capture old values for audit trail
+    const oldStaffId = appointment.staffId;
+    const oldStaffName = appointment.staff?.name || null;
 
     // Update appointment
     const updated = await prisma.appointment.update({
@@ -51,6 +60,70 @@ export async function PATCH(
         staff: true,
       },
     });
+
+    // Get new staff name
+    const newStaffName = await getStaffName(staffId);
+
+    // Determine action type
+    let action: "ASSIGNED" | "REASSIGNED";
+    let historyAction: "ASSIGNED" | "REASSIGNED";
+
+    if (!oldStaffId && staffId) {
+      action = "ASSIGNED";
+      historyAction = "ASSIGNED";
+    } else {
+      action = "REASSIGNED";
+      historyAction = "REASSIGNED";
+    }
+
+    // Create audit log (non-blocking)
+    await createAuditLog({
+      entityType: "APPOINTMENT",
+      entityId: appointmentId,
+      action: action,
+      performedBy: performedBy || "SYSTEM",
+      performedByName: performedByName || "System",
+      fieldChanged: "staffId",
+      oldValue: oldStaffId || "",
+      newValue: staffId || "",
+    });
+
+    // Create appointment history (non-blocking)
+    await createAppointmentHistory({
+      appointmentId: appointmentId,
+      action: historyAction,
+      performedBy: performedBy || "SYSTEM",
+      performedByName: performedByName || "System",
+      oldStaffId: oldStaffId,
+      oldStaffName: oldStaffName,
+      newStaffId: staffId || null,
+      newStaffName: newStaffName,
+      notes: oldStaffId
+        ? `Staff reassigned from ${oldStaffName} to ${newStaffName}`
+        : `Staff assigned to ${newStaffName}`,
+    });
+
+    // Broadcast real-time notification (non-blocking)
+    fetch(`${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3001"}/api/notifications/publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "appointment:assigned",
+        data: {
+          appointmentId,
+          appointmentDate: updated.date,
+          appointmentTime: `${updated.startTime} - ${updated.endTime}`,
+          customerName: updated.userName,
+          serviceName: updated.service.nameTh,
+          staffId: staffId,
+          staffName: newStaffName,
+          oldStaffName: oldStaffName,
+          performedByName: performedByName || "System",
+          action: historyAction,
+        },
+        targetRole: "STAFF", // Notify all staff
+      }),
+    }).catch((err) => console.error("Failed to publish notification:", err));
 
     return NextResponse.json(updated);
   } catch (error) {

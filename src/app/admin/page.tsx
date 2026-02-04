@@ -9,6 +9,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { AssignStaffDialog } from "@/components/admin/AssignStaffDialog";
+import { useNotifications } from "@/hooks/useNotifications";
+import { useBulkSelection } from "@/hooks/useBulkSelection";
+import { BulkActionsBar } from "@/components/admin/BulkActionsBar";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface User {
   id: string;
@@ -25,6 +29,20 @@ export default function AdminPage() {
   const [staff, setStaff] = useState<User[]>([]);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
+
+  // Bulk selection
+  const bulkSelection = useBulkSelection(appointments);
+
+  // Real-time notifications
+  useNotifications({
+    userId: user?.id || "",
+    role: user?.role || "",
+    onAppointmentAssigned: () => {
+      // Refresh data when assignments change
+      fetchData();
+    },
+    enabled: !!user,
+  });
 
   useEffect(() => {
     const stored = localStorage.getItem("user");
@@ -76,6 +94,9 @@ export default function AdminPage() {
               <p className="text-sm text-gray-600">ผู้ดูแลระบบ: {user.name}</p>
             </div>
             <div className="flex items-center gap-4">
+              <Link href="/admin/reports">
+                <Button variant="outline">📊 Reports</Button>
+              </Link>
               <Link href="/staff">
                 <Button variant="outline">Staff View</Button>
               </Link>
@@ -139,6 +160,12 @@ export default function AdminPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-[50px]">
+                        <Checkbox
+                          checked={bulkSelection.isAllSelected}
+                          onCheckedChange={bulkSelection.toggleAll}
+                        />
+                      </TableHead>
                       <TableHead>วันที่</TableHead>
                       <TableHead>เวลา</TableHead>
                       <TableHead>ผู้จอง</TableHead>
@@ -151,6 +178,12 @@ export default function AdminPage() {
                   <TableBody>
                     {appointments.slice(0, 20).map((apt) => (
                       <TableRow key={apt.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={bulkSelection.isSelected(apt.id)}
+                            onCheckedChange={() => bulkSelection.toggle(apt.id)}
+                          />
+                        </TableCell>
                         <TableCell>
                           {new Date(apt.date).toLocaleDateString("th-TH")}
                         </TableCell>
@@ -227,12 +260,24 @@ export default function AdminPage() {
         </Tabs>
       </main>
 
+      <BulkActionsBar
+        selectedCount={bulkSelection.selectedCount}
+        staff={staff}
+        onClear={bulkSelection.clear}
+        onSuccess={fetchData}
+        selectedIds={Array.from(bulkSelection.selectedIds)}
+        userId={user?.id || ""}
+        userName={user?.name || ""}
+      />
+
       <AssignStaffDialog
         open={assignDialogOpen}
         onOpenChange={setAssignDialogOpen}
         appointment={selectedAppointment}
         staff={staff}
         onAssignmentComplete={fetchData}
+        userId={user?.id || ""}
+        userName={user?.name || ""}
       />
     </div>
   );

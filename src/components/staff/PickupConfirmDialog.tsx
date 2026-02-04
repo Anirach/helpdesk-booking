@@ -28,6 +28,7 @@ interface PickupConfirmDialogProps {
   onOpenChange: (open: boolean) => void;
   appointment: Appointment | null;
   userId: string;
+  userName: string;
   onPickupComplete: () => void;
 }
 
@@ -36,6 +37,7 @@ export function PickupConfirmDialog({
   onOpenChange,
   appointment,
   userId,
+  userName,
   onPickupComplete,
 }: PickupConfirmDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
@@ -48,7 +50,11 @@ export function PickupConfirmDialog({
       const res = await fetch(`/api/appointments/${appointment.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ staffId: userId }),
+        body: JSON.stringify({
+          staffId: userId,
+          performedBy: userId,
+          performedByName: userName,
+        }),
       });
 
       if (!res.ok) {

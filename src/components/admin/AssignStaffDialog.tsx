@@ -39,6 +39,8 @@ interface AssignStaffDialogProps {
   appointment: Appointment | null;
   staff: Staff[];
   onAssignmentComplete: () => void;
+  userId: string;
+  userName: string;
 }
 
 export function AssignStaffDialog({
@@ -47,6 +49,8 @@ export function AssignStaffDialog({
   appointment,
   staff,
   onAssignmentComplete,
+  userId,
+  userName,
 }: AssignStaffDialogProps) {
   const [selectedStaffId, setSelectedStaffId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
@@ -59,7 +63,11 @@ export function AssignStaffDialog({
       const res = await fetch(`/api/appointments/${appointment.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ staffId: selectedStaffId }),
+        body: JSON.stringify({
+          staffId: selectedStaffId,
+          performedBy: userId,
+          performedByName: userName,
+        }),
       });
 
       if (!res.ok) {

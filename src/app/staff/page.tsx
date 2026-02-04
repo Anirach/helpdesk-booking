@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PickupConfirmDialog } from "@/components/staff/PickupConfirmDialog";
+import { useNotifications } from "@/hooks/useNotifications";
 
 interface User {
   id: string;
@@ -38,6 +39,17 @@ export default function StaffPage() {
   const [loading, setLoading] = useState(true);
   const [pickupDialogOpen, setPickupDialogOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+
+  // Real-time notifications
+  useNotifications({
+    userId: user?.id || "",
+    role: user?.role || "",
+    onAppointmentAssigned: () => {
+      // Refresh appointments when someone is assigned
+      fetchTodayAppointments();
+    },
+    enabled: !!user,
+  });
 
   useEffect(() => {
     const stored = localStorage.getItem("user");
@@ -267,6 +279,7 @@ export default function StaffPage() {
         onOpenChange={setPickupDialogOpen}
         appointment={selectedAppointment}
         userId={user?.id || ""}
+        userName={user?.name || ""}
         onPickupComplete={fetchTodayAppointments}
       />
     </div>
