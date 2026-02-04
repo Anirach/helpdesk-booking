@@ -7,6 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PickupConfirmDialog } from "@/components/staff/PickupConfirmDialog";
 
 interface User {
   id: string;
@@ -24,6 +26,8 @@ interface Appointment {
   userPhone: string;
   description: string;
   status: string;
+  staffId?: string | null;
+  staff?: { id: string; name: string; email: string } | null;
   service: { nameTh: string };
 }
 
@@ -32,6 +36,8 @@ export default function StaffPage() {
   const [user, setUser] = useState<User | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pickupDialogOpen, setPickupDialogOpen] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem("user");
@@ -72,6 +78,10 @@ export default function StaffPage() {
     CANCELLED: { label: "ยกเลิก", variant: "destructive" },
   };
 
+  // Filter appointments
+  const myAppointments = appointments.filter((a) => a.staffId === user?.id);
+  const availableAppointments = appointments.filter((a) => !a.staffId);
+
   if (!user) return null;
 
   return (
@@ -98,13 +108,22 @@ export default function StaffPage() {
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        <div className="grid gap-6 md:grid-cols-3 mb-8">
+        <div className="grid gap-6 md:grid-cols-4 mb-8">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-lg">📅 นัดหมายวันนี้</CardTitle>
+              <CardTitle className="text-lg">📋 งานของฉัน</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-blue-600">{appointments.length}</p>
+              <p className="text-3xl font-bold text-blue-600">{myAppointments.length}</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">📌 งานว่าง</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-purple-600">{availableAppointments.length}</p>
             </CardContent>
           </Card>
 
@@ -114,7 +133,7 @@ export default function StaffPage() {
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold text-yellow-600">
-                {appointments.filter((a) => a.status === "PENDING").length}
+                {myAppointments.filter((a) => a.status === "PENDING").length}
               </p>
             </CardContent>
           </Card>
@@ -125,56 +144,131 @@ export default function StaffPage() {
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold text-green-600">
-                {appointments.filter((a) => a.status === "COMPLETED").length}
+                {myAppointments.filter((a) => a.status === "COMPLETED").length}
               </p>
             </CardContent>
           </Card>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>นัดหมายวันนี้</CardTitle>
-            <CardDescription>Today's Appointments</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {appointments.length === 0 ? (
-              <p className="text-center text-gray-500 py-8">ไม่มีนัดหมายวันนี้</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>เวลา</TableHead>
-                    <TableHead>ผู้จอง</TableHead>
-                    <TableHead>บริการ</TableHead>
-                    <TableHead>ปัญหา</TableHead>
-                    <TableHead>สถานะ</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {appointments.map((apt) => (
-                    <TableRow key={apt.id}>
-                      <TableCell className="font-mono">
-                        {apt.startTime} - {apt.endTime}
-                      </TableCell>
-                      <TableCell>
-                        <div>{apt.userName}</div>
-                        <div className="text-xs text-gray-500">{apt.userPhone}</div>
-                      </TableCell>
-                      <TableCell>{apt.service.nameTh}</TableCell>
-                      <TableCell className="max-w-xs truncate">{apt.description}</TableCell>
-                      <TableCell>
-                        <Badge variant={statusConfig[apt.status]?.variant || "secondary"}>
-                          {statusConfig[apt.status]?.label || apt.status}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+        <Tabs defaultValue="my" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="my">งานของฉัน ({myAppointments.length})</TabsTrigger>
+            <TabsTrigger value="available">งานว่าง ({availableAppointments.length})</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="my">
+            <Card>
+              <CardHeader>
+                <CardTitle>งานของฉัน</CardTitle>
+                <CardDescription>My Assigned Appointments</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {myAppointments.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">ยังไม่มีงานที่มอบหมายให้คุณ</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>เวลา</TableHead>
+                        <TableHead>ผู้จอง</TableHead>
+                        <TableHead>บริการ</TableHead>
+                        <TableHead>ปัญหา</TableHead>
+                        <TableHead>สถานะ</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {myAppointments.map((apt) => (
+                        <TableRow key={apt.id}>
+                          <TableCell className="font-mono">
+                            {apt.startTime} - {apt.endTime}
+                          </TableCell>
+                          <TableCell>
+                            <div>{apt.userName}</div>
+                            <div className="text-xs text-gray-500">{apt.userPhone}</div>
+                          </TableCell>
+                          <TableCell>{apt.service.nameTh}</TableCell>
+                          <TableCell className="max-w-xs truncate">{apt.description}</TableCell>
+                          <TableCell>
+                            <Badge variant={statusConfig[apt.status]?.variant || "secondary"}>
+                              {statusConfig[apt.status]?.label || apt.status}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="available">
+            <Card>
+              <CardHeader>
+                <CardTitle>งานว่าง</CardTitle>
+                <CardDescription>Available Appointments</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {availableAppointments.length === 0 ? (
+                  <p className="text-center text-gray-500 py-8">ไม่มีงานว่างในขณะนี้</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>เวลา</TableHead>
+                        <TableHead>ผู้จอง</TableHead>
+                        <TableHead>บริการ</TableHead>
+                        <TableHead>ปัญหา</TableHead>
+                        <TableHead>สถานะ</TableHead>
+                        <TableHead>จัดการ</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {availableAppointments.map((apt) => (
+                        <TableRow key={apt.id}>
+                          <TableCell className="font-mono">
+                            {apt.startTime} - {apt.endTime}
+                          </TableCell>
+                          <TableCell>
+                            <div>{apt.userName}</div>
+                            <div className="text-xs text-gray-500">{apt.userPhone}</div>
+                          </TableCell>
+                          <TableCell>{apt.service.nameTh}</TableCell>
+                          <TableCell className="max-w-xs truncate">{apt.description}</TableCell>
+                          <TableCell>
+                            <Badge variant={statusConfig[apt.status]?.variant || "secondary"}>
+                              {statusConfig[apt.status]?.label || apt.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                setSelectedAppointment(apt);
+                                setPickupDialogOpen(true);
+                              }}
+                            >
+                              รับงาน
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </main>
+
+      <PickupConfirmDialog
+        open={pickupDialogOpen}
+        onOpenChange={setPickupDialogOpen}
+        appointment={selectedAppointment}
+        userId={user?.id || ""}
+        onPickupComplete={fetchTodayAppointments}
+      />
     </div>
   );
 }

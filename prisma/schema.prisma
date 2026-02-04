@@ -33,7 +33,7 @@ model Service {
 }
 
 model Appointment {
-  id          String   @id @default(cuid())
+  id          String               @id @default(cuid())
   date        DateTime
   startTime   String
   endTime     String
@@ -41,13 +41,18 @@ model Appointment {
   userEmail   String?
   userPhone   String
   description String
-  status      String   @default("PENDING") // PENDING, CONFIRMED, COMPLETED, CANCELLED
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  service     Service  @relation(fields: [serviceId], references: [id])
+  status      String               @default("PENDING") // PENDING, CONFIRMED, COMPLETED, CANCELLED
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  service     Service              @relation(fields: [serviceId], references: [id])
   serviceId   String
-  staff       User?    @relation(fields: [staffId], references: [id])
+  staff       User?                @relation(fields: [staffId], references: [id])
   staffId     String?
+  history     AppointmentHistory[] // NEW: Assignment and status change history
+
+  @@index([date, status])
+  @@index([staffId])
+  @@index([createdAt])
 }
 
 model StaffAvailability {
@@ -69,4 +74,52 @@ model Settings {
   workingEnd   String @default("16:30")
   slotDuration Int    @default(30)
   holidays     String @default("[]")
+}
+
+// Track all system changes for audit purposes
+model AuditLog {
+  id              String   @id @default(cuid())
+  entityType      String   // "APPOINTMENT", "USER", "SERVICE"
+  entityId        String   // ID of the affected record
+  action          String   // "CREATE", "UPDATE", "DELETE", "ASSIGN", "STATUS_CHANGE"
+  performedBy     String   // User ID who made the change
+  performedByName String   // User name (denormalized for easy reporting)
+  fieldChanged    String?  // Field name that changed
+  oldValue        String?  // Previous value (JSON stringified if complex)
+  newValue        String?  // New value (JSON stringified if complex)
+  ipAddress       String?  // For security tracking
+  userAgent       String?  // Browser info
+  createdAt       DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([performedBy])
+}
+
+// Specialized history tracking for appointments
+model AppointmentHistory {
+  id              String      @id @default(cuid())
+  appointmentId   String
+  action          String      // "CREATED", "ASSIGNED", "REASSIGNED", "STATUS_CHANGED", "CANCELLED"
+  performedBy     String      // User ID
+  performedByName String      // User name (denormalized)
+
+  // Assignment tracking
+  oldStaffId   String?
+  oldStaffName String?
+  newStaffId   String?
+  newStaffName String?
+
+  // Status tracking
+  oldStatus String?
+  newStatus String?
+
+  // Additional context
+  notes     String?
+  createdAt DateTime    @default(now())
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([appointmentId])
+  @@index([createdAt])
 }

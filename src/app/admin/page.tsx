@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { AssignStaffDialog } from "@/components/admin/AssignStaffDialog";
 
 interface User {
   id: string;
@@ -22,6 +23,8 @@ export default function AdminPage() {
   const [stats, setStats] = useState({ total: 0, pending: 0, completed: 0, staff: 0 });
   const [appointments, setAppointments] = useState<any[]>([]);
   const [staff, setStaff] = useState<User[]>([]);
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem("user");
@@ -140,7 +143,9 @@ export default function AdminPage() {
                       <TableHead>เวลา</TableHead>
                       <TableHead>ผู้จอง</TableHead>
                       <TableHead>บริการ</TableHead>
+                      <TableHead>เจ้าหน้าที่</TableHead>
                       <TableHead>สถานะ</TableHead>
+                      <TableHead>จัดการ</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -155,7 +160,29 @@ export default function AdminPage() {
                         <TableCell>{apt.userName}</TableCell>
                         <TableCell>{apt.service?.nameTh}</TableCell>
                         <TableCell>
+                          {apt.staff ? (
+                            <div>
+                              <div className="font-medium text-sm">{apt.staff.name}</div>
+                              <div className="text-xs text-gray-500">{apt.staff.email}</div>
+                            </div>
+                          ) : (
+                            <Badge variant="outline">ยังไม่มอบหมาย</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
                           <Badge>{apt.status}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setSelectedAppointment(apt);
+                              setAssignDialogOpen(true);
+                            }}
+                          >
+                            {apt.staff ? "เปลี่ยน" : "มอบหมาย"}
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -199,6 +226,14 @@ export default function AdminPage() {
           </TabsContent>
         </Tabs>
       </main>
+
+      <AssignStaffDialog
+        open={assignDialogOpen}
+        onOpenChange={setAssignDialogOpen}
+        appointment={selectedAppointment}
+        staff={staff}
+        onAssignmentComplete={fetchData}
+      />
     </div>
   );
 }
